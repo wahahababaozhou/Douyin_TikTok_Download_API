@@ -25,11 +25,13 @@ import traceback
 import configparser
 import urllib.parse
 import random
-
+from aiosocksy.connector import ProxyConnector, ProxyClientRequest
 from zlib import crc32
 from typing import Union
-from tenacity import *
 
+from aiohttp_socks import ProxyConnector
+from tenacity import *
+import aiohttp_socks
 
 class Scraper:
     """__________________________________________⬇️initialization(初始化)⬇️______________________________________"""
@@ -188,15 +190,34 @@ class Scraper:
             else:
                 print('正在通过TikTok分享链接获取原始链接...')
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(url, headers=self.headers, proxy=self.proxies, allow_redirects=False,
-                                               timeout=10) as response:
+                    proxies = "socks5://127.0.0.1:11080"
+                    conn = aiohttp_socks.ProxyConnector.from_url(proxies)
+                    async with aiohttp.ClientSession(connector=conn) as session:
+                    # connector = ProxyConnector()
+                    # socks = 'socks5://127.0.0.1:11080'
+                    # async with aiohttp.ClientSession(connector=connector, request_class=ProxyClientRequest) as session:
+                        async with session.get(url) as response:
+                            print(await response.text())
                             if response.status == 301:
                                 url = response.headers['Location'].split('?')[0] if '?' in response.headers[
                                     'Location'] else \
                                     response.headers['Location']
                                 print('获取原始链接成功, 原始链接为: {}'.format(url))
                                 return url
+                            elif response.status == 200:
+                                url = response.real_url.raw_host+response.real_url.raw_path
+                                return url
+                    # proxies = "socks5://127.0.0.1:11080"
+                    # conn = aiohttp_socks.ProxyConnector.from_url(proxies)
+                    # async with aiohttp.ClientSession(connector=conn) as session:
+                    #     async with session.get(url, headers=self.headers, allow_redirects=False,
+                    #                            timeout=10) as response:
+                    #         if response.status == 301:
+                    #             url = response.headers['Location'].split('?')[0] if '?' in response.headers[
+                    #                 'Location'] else \
+                    #                 response.headers['Location']
+                    #             print('获取原始链接成功, 原始链接为: {}'.format(url))
+                    #             return url
                 except Exception as e:
                     print('获取原始链接失败！')
                     print(e)
@@ -402,8 +423,10 @@ class Scraper:
             # 构造访问链接/Construct the access link
             api_url = f'https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}'
             print("正在获取视频数据API: {}".format(api_url))
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=self.tiktok_api_headers, proxy=self.proxies,
+            proxies = "socks5://127.0.0.1:11080"
+            conn = aiohttp_socks.ProxyConnector.from_url(proxies)
+            async with aiohttp.ClientSession(connector=conn) as session:
+                async with session.get(api_url, headers=self.tiktok_api_headers,
                                        timeout=10) as response:
                     response = await response.json()
                     video_data = response['aweme_list'][0]

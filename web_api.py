@@ -13,6 +13,8 @@ import os
 import time
 import json
 import aiohttp
+import aiohttp_socks
+import requests
 import uvicorn
 import zipfile
 import threading
@@ -577,7 +579,8 @@ async def get_tiktok_profile_liked_videos(tikhub_token: str, tiktok_video_url: s
     ## 参数/Parameter
     tikhub_token: https://api.tikhub.io/#/Authorization/login_for_access_token_user_login_post
     """
-    response = await api.get_tiktok_user_profile_liked_videos(tikhub_token=tikhub_token, tiktok_video_url=tiktok_video_url)
+    response = await api.get_tiktok_user_profile_liked_videos(tikhub_token=tikhub_token,
+                                                              tiktok_video_url=tiktok_video_url)
     return response
 
 
@@ -598,6 +601,45 @@ async def Get_Shortcut():
 
 
 """ ________________________⬇️下载文件端点/函数(Download file endpoints/functions)⬇️________________________"""
+
+
+@app.get("/downloadjpg", tags=["Download"])
+@limiter.limit(Rate_Limit)
+async def downloadjpg(request: Request, url: str, fileid: str, prefix: bool = True, watermark: bool = False):
+    proxies = "socks5://127.0.0.1:11080"
+    conn = aiohttp_socks.ProxyConnector.from_url(proxies)
+    async with aiohttp.ClientSession(connector=conn) as session:
+        async with session.get(url=url) as res:
+            content_type = res.headers.get('Content-Type')
+            file_name_prefix = config["Web_API"]["File_Name_Prefix"] if prefix else ''
+            root_path = config["Web_API"]["Download_Path"]
+            file_path = root_path + "\\\\" + file_name_prefix + "tiktok_" + fileid + ".jpeg"
+            with open(file_path, 'wb') as f:
+                f.write(await res.content.read())
+
+
+# 下载图片
+@app.route("/downloadjpg", methods=['POST'])
+def downloadjpg(request):
+    url = request.json.get('url')
+    fileid = request.json.get('fileid')
+    img = requests.get(url).content
+    # url是img的url
+    file_name_prefix = config["Web_API"]["File_Name_Prefix"]
+    root_path = config["Web_API"]["Download_Path"]
+    file_path = root_path + "\\\\" + file_name_prefix + "tiktok_" + fileid + ".jpeg"
+    with open(file_path + 'tiktok_' + fileid + '.jpg', 'wb') as f:
+        f.write(img)
+
+
+async def download_jpg(url, fileid):
+    img = requests.get(url).content
+    # url是img的url
+    file_name_prefix = config["Web_API"]["File_Name_Prefix"]
+    root_path = config["Web_API"]["Download_Path"]
+    file_path = root_path + "\\\\" + file_name_prefix + "tiktok_" + fileid + ".jpeg"
+    with open(file_path, 'wb') as f:
+        f.write(img)
 
 
 # 下载文件端点/Download file endpoint
@@ -650,7 +692,9 @@ async def download_file_hybrid(request: Request, url: str, prefix: bool = True, 
             # 判断文件是否存在，存在就直接返回
             if os.path.exists(file_path):
                 print('文件已存在，直接返回')
-                return FileResponse(path=file_path, media_type='video/mp4', filename=file_name)
+                # 返回视频信息
+                return ORJSONResponse(data)
+                # return FileResponse(path=file_path, media_type='video/mp4', filename=file_name)
             else:
                 if platform == 'douyin':
                     async with aiohttp.ClientSession() as session:
@@ -665,7 +709,13 @@ async def download_file_hybrid(request: Request, url: str, prefix: bool = True, 
                             r = await res.content.read()
                 with open(file_path, 'wb') as f:
                     f.write(r)
-                return FileResponse(path=file_path, media_type='video/mp4', filename=file_name)
+                # return FileResponse(path=file_path, media_type='video/mp4', filename=file_name)
+                # 继续下载封面图片
+                url = data.get('cover_data').get('origin_cover').get('url_list')[0]
+                fileid = aweme_id
+                await download_jpg(url, fileid)
+                # 返回视频信息
+                return ORJSONResponse(data)
         elif url_type == 'image':
             url = data.get('image_data').get('no_watermark_image_list') if not watermark else data.get(
                 'image_data').get('watermark_image_list')
@@ -828,8 +878,8 @@ def cleanup_path():
         if os.path.exists(root_path):
             time_now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             print(f"{time_now}: Cleaning up the download folder...")
-            for file in os.listdir("./download"):
-                file_path = os.path.join("./download", file)
+            for file in os.listdir(root_path):
+                file_path = os.path.join(root_path, file)
                 try:
                     if os.path.isfile(file_path):
                         os.remove(file_path)
